@@ -2,21 +2,22 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>أخبار الدول</title>
+    <title>آخر الأخبار</title>
     <style>
         body { background-color: #121212; color: #e8eaed; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }
         .container { max-width: 800px; margin: auto; }
-        .card { background: #1e1e1e; border-radius: 12px; border-top: 5px solid #8ab4f8; padding: 20px; margin-bottom: 20px; border: 1px solid #3c4043; }
-        .title { color: #8ab4f8; font-size: 22px; margin-bottom: 10px; }
-        .meta { font-size: 13px; color: #9aa0a6; margin-bottom: 15px; display: flex; justify-content: space-between; }
-        .content { line-height: 1.7; color: #d1d1d1; }
-        #status { text-align: center; margin-top: 50px; color: #9aa0a6; }
-        a { color: #8ab4f8; text-decoration: none; font-weight: bold; }
+        .card { background: #1e1e1e; border-radius: 12px; border-top: 5px solid #8ab4f8; padding: 20px; margin-bottom: 20px; border: 1px solid #3c4043; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .title { color: #8ab4f8; font-size: 22px; margin-bottom: 10px; font-weight: bold; }
+        .meta { font-size: 13px; color: #9aa0a6; margin-bottom: 15px; display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .content { line-height: 1.8; color: #d1d1d1; font-size: 16px; }
+        #status { text-align: center; margin-top: 50px; color: #9aa0a6; font-size: 18px; }
+        a.source-link { display: inline-block; margin-top: 15px; color: #8ab4f8; text-decoration: none; border: 1px solid #8ab4f8; padding: 5px 15px; border-radius: 5px; transition: 0.3s; }
+        a.source-link:hover { background: #8ab4f8; color: #121212; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div id="status">جاري جلب البيانات...</div>
+        <div id="status">جاري البحث عن أحدث البيانات...</div>
         <div id="news-container"></div>
     </div>
 
@@ -26,16 +27,19 @@
         function init() {
             const urlParams = new URLSearchParams(window.location.search);
             const country = urlParams.get('country');
-
             if (country) {
                 fetchData(decodeURIComponent(country));
             } else {
-                document.getElementById('status').innerText = "يرجى تحديد دولة في الرابط، مثال: ?country=العراق";
+                document.getElementById('status').innerText = "يرجى إضافة ?country=اسم_الدولة للرابط";
             }
         }
 
+        function parseDate(dateStr) {
+            // تحويل التاريخ من نص (مثلاً 2024-03-21) إلى كائن تاريخ للمقارنة
+            return new Date(dateStr);
+        }
+
         function fetchData(query) {
-            // جلب كافة البيانات الخاصة بالدولة لفرزها برمجياً
             const gql = encodeURIComponent(`SELECT A, B, C, D, E, F WHERE A = '${query}'`);
             const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tq=${gql}`;
 
@@ -45,45 +49,46 @@
                 const container = document.getElementById('news-container');
                 const statusLabel = document.getElementById('status');
                 
-                statusLabel.style.display = "none";
-                container.innerHTML = "";
-
                 if (!rows || rows.length === 0) {
-                    statusLabel.innerText = "لا توجد نتائج لـ " + query;
-                    statusLabel.style.display = "block";
+                    statusLabel.innerText = "❌ لا توجد بيانات مسجلة لـ " + query;
                     return;
                 }
 
-                // --- منطق البحث عن أحدث تاريخ برمجياً ---
-                // سنقوم بفرز الصفوف بناءً على التاريخ (العمود D)
-                let allRows = rows.map(r => ({
+                // 1. تحويل البيانات لتنسيق سهل ومعالجة التاريخ
+                let data = rows.map(r => ({
                     country: r.c[0]?.v,
                     title: r.c[1]?.v,
-                    text: r.c[2]?.v,
-                    dateStr: r.c[3]?.f || r.c[3]?.v, // النص الظاهر للتاريخ
+                    content: r.c[2]?.v,
+                    dateText: r.c[3]?.f || r.c[3]?.v, // النص كما هو (للعرض)
+                    dateValue: parseDate(r.c[3]?.f || r.c[3]?.v), // القيمة (للمقارنة)
                     source: r.c[4]?.v,
                     link: r.c[5]?.v
                 }));
 
-                // استخراج قائمة التواريخ الفريدة المتاحة لهذه الدولة
-                let uniqueDates = [...new Set(allRows.map(item => item.dateStr))];
-                
-                // نفترض أن الجدول مرتب زمنياً من الأقدم للأحدث، فنأخذ آخر تاريخ في القائمة
-                // إذا كان الجدول غير مرتب، يفضل ترتيبه في Google Sheets أولاً
-                const latestDate = uniqueDates[uniqueDates.length - 1];
+                // 2. فرز البيانات بحيث يكون التاريخ الأحدث في البداية
+                data.sort((a, b) => b.dateValue - a.dateValue);
 
-                // عرض الأخبار التي تطابق هذا التاريخ الأحدث فقط
-                allRows.filter(item => item.dateStr === latestDate).forEach(item => {
+                // 3. تحديد ما هو أحدث تاريخ موجود فعلياً لهذه الدولة
+                const latestDateStr = data[0].dateText;
+
+                // 4. عرض كافة الأخبار التي تنتمي لهذا التاريخ الأحدث فقط
+                statusLabel.style.display = "none";
+                container.innerHTML = "";
+
+                data.filter(item => item.dateText === latestDateStr).forEach(item => {
                     container.innerHTML += `
                         <div class="card">
-                            <div class="meta"><span>📍 ${item.country}</span><span>📅 ${item.dateStr}</span></div>
+                            <div class="meta">
+                                <span>📍 ${item.country}</span>
+                                <span>📅 ${item.dateText}</span>
+                            </div>
                             <div class="title">${item.title}</div>
-                            <div class="content">${item.text}</div>
-                            <div style="margin-top:15px"><a href="${item.link}" target="_blank">🔗 المصدر: ${item.source}</a></div>
+                            <div class="content">${item.content}</div>
+                            <a href="${item.link}" target="_blank" class="source-link">🔗 المصدر: ${item.source}</a>
                         </div>`;
                 });
             }).catch(err => {
-                document.getElementById('status').innerText = "حدث خطأ أثناء جلب البيانات.";
+                document.getElementById('status').innerText = "⚠️ خطأ في الاتصال بقاعدة البيانات.";
             });
         }
         init();

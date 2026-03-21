@@ -3,22 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>نظام الأخبار المحدث</title>
+    <title>آخر 3 تحديثات إخبارية</title>
     <style>
         body { background-color: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; padding: 20px; }
         .container { max-width: 800px; margin: auto; }
-        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; margin-bottom: 20px; border-top: 4px solid #58a6ff; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; margin-bottom: 20px; border-top: 4px solid #58a6ff; position: relative; }
+        .date-group-header { background: #21262d; padding: 10px 20px; border-radius: 8px; margin-bottom: 15px; border-right: 5px solid #f85149; color: #f85149; font-weight: bold; font-size: 18px; }
         .title { color: #58a6ff; font-size: 22px; margin: 0 0 10px 0; font-weight: bold; }
         .meta { display: flex; justify-content: space-between; font-size: 12px; color: #8b949e; margin-bottom: 15px; background: #0d1117; padding: 5px 10px; border-radius: 5px; }
         .content { font-size: 16px; line-height: 1.6; white-space: pre-wrap; }
         #status { text-align: center; margin-top: 50px; font-size: 18px; color: #8b949e; }
-        .link { display: inline-block; margin-top: 15px; color: #58a6ff; text-decoration: none; font-weight: bold; }
-        .latest-label { background: #238636; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+        .link { display: inline-block; margin-top: 15px; color: #58a6ff; text-decoration: none; font-weight: bold; border: 1px solid #58a6ff; padding: 5px 12px; border-radius: 5px; }
+        .link:hover { background: #58a6ff; color: #ffffff; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div id="status">جاري فحص التحديثات الأخيرة...</div>
+        <div id="status">جاري جلب آخر 3 تحديثات...</div>
         <div id="news-container"></div>
     </div>
 
@@ -36,8 +37,7 @@
         }
 
         async function loadNews(target) {
-            // التعديل السحري: نطلب من جوجل ترتيب البيانات حسب العمود D تنازلياً (DESC)
-            // هذا يضمن أن التاريخ الأحدث يكون دائماً في أول النتائج
+            // نطلب البيانات مرتبة تنازلياً حسب التاريخ لضمان وصول الأحدث أولاً
             const query = encodeURIComponent(`SELECT A, B, C, D, E, F WHERE A = '${target}' ORDER BY D DESC`);
             const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tq=${query}`;
 
@@ -57,29 +57,38 @@
                 status.style.display = "none";
                 container.innerHTML = "";
 
-                // بما أننا رتبنا البيانات DESC، فأول سطر هو حتماً الأحدث
-                const latestDateText = rows[0].c[3]?.f || rows[0].c[3]?.v;
+                // 1. استخراج كل التواريخ الفريدة المتاحة في النتائج (بالترتيب)
+                const allDates = rows.map(r => r.c[3]?.f || r.c[3]?.v);
+                const uniqueDates = [...new Set(allDates)];
+                
+                // 2. تحديد آخر 3 تواريخ فقط
+                const top3Dates = uniqueDates.slice(0, 3);
 
-                rows.forEach(r => {
-                    const currentDate = r.c[3]?.f || r.c[3]?.v;
+                // 3. عرض الأخبار مصنفة حسب التاريخ
+                top3Dates.forEach(date => {
+                    // إضافة عنوان لكل مجموعة تاريخ
+                    container.innerHTML += `<div class="date-group-header">تحديثات تاريخ: ${date}</div>`;
                     
-                    // نعرض فقط الأخبار التي تطابق أحدث تاريخ موجود في النتائج المرتبة
-                    if (currentDate === latestDateText) {
-                        container.innerHTML += `
-                            <div class="card">
-                                <div class="meta">
-                                    <span>📍 ${r.c[0]?.v} <span class="latest-label">تحديث أخير</span></span>
-                                    <span>📅 ${currentDate}</span>
-                                </div>
-                                <div class="title">${r.c[1]?.v}</div>
-                                <div class="content">${r.c[2]?.v}</div>
-                                <a href="${r.c[5]?.v}" target="_blank" class="link">🔗 المصدر: ${r.c[4]?.v}</a>
-                            </div>`;
-                    }
+                    // البحث عن الأخبار التي تطابق هذا التاريخ
+                    rows.forEach(r => {
+                        const rowDate = r.c[3]?.f || r.c[3]?.v;
+                        if (rowDate === date) {
+                            container.innerHTML += `
+                                <div class="card">
+                                    <div class="meta">
+                                        <span>📍 ${r.c[0]?.v}</span>
+                                        <span>📅 ${rowDate}</span>
+                                    </div>
+                                    <div class="title">${r.c[1]?.v}</div>
+                                    <div class="content">${r.c[2]?.v}</div>
+                                    <a href="${r.c[5]?.v}" target="_blank" class="link">🔗 المصدر: ${r.c[4]?.v}</a>
+                                </div>`;
+                        }
+                    });
                 });
 
             } catch (e) {
-                document.getElementById('status').innerText = "خطأ في جلب البيانات. تأكد من اتصالك.";
+                document.getElementById('status').innerText = "خطأ في الاتصال. تأكد من إعدادات الجدول.";
             }
         }
         init();

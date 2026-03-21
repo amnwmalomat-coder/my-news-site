@@ -35,6 +35,7 @@
         }
 
         function fetchData(query) {
+            // جلب كافة البيانات الخاصة بالدولة لفرزها برمجياً
             const gql = encodeURIComponent(`SELECT A, B, C, D, E, F WHERE A = '${query}'`);
             const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tq=${gql}`;
 
@@ -42,29 +43,47 @@
                 const json = JSON.parse(text.substring(47, text.length - 2));
                 const rows = json.table.rows;
                 const container = document.getElementById('news-container');
-                document.getElementById('status').style.display = "none";
+                const statusLabel = document.getElementById('status');
+                
+                statusLabel.style.display = "none";
+                container.innerHTML = "";
 
                 if (!rows || rows.length === 0) {
-                    document.getElementById('status').innerText = "لا توجد نتائج لـ " + query;
-                    document.getElementById('status').style.display = "block";
+                    statusLabel.innerText = "لا توجد نتائج لـ " + query;
+                    statusLabel.style.display = "block";
                     return;
                 }
 
-                // جلب أحدث تاريخ (آخر سطر)
-                const latestDate = rows[rows.length - 1].c[3].f || rows[rows.length - 1].c[3].v;
+                // --- منطق البحث عن أحدث تاريخ برمجياً ---
+                // سنقوم بفرز الصفوف بناءً على التاريخ (العمود D)
+                let allRows = rows.map(r => ({
+                    country: r.c[0]?.v,
+                    title: r.c[1]?.v,
+                    text: r.c[2]?.v,
+                    dateStr: r.c[3]?.f || r.c[3]?.v, // النص الظاهر للتاريخ
+                    source: r.c[4]?.v,
+                    link: r.c[5]?.v
+                }));
 
-                rows.forEach(r => {
-                    const date = r.c[3].f || r.c[3].v;
-                    if (date === latestDate) {
-                        container.innerHTML += `
-                            <div class="card">
-                                <div class="meta"><span>📍 ${r.c[0].v}</span><span>📅 ${date}</span></div>
-                                <div class="title">${r.c[1].v}</div>
-                                <div class="content">${r.c[2].v}</div>
-                                <div style="margin-top:15px"><a href="${r.c[5].v}" target="_blank">🔗 المصدر: ${r.c[4].v}</a></div>
-                            </div>`;
-                    }
+                // استخراج قائمة التواريخ الفريدة المتاحة لهذه الدولة
+                let uniqueDates = [...new Set(allRows.map(item => item.dateStr))];
+                
+                // نفترض أن الجدول مرتب زمنياً من الأقدم للأحدث، فنأخذ آخر تاريخ في القائمة
+                // إذا كان الجدول غير مرتب، يفضل ترتيبه في Google Sheets أولاً
+                const latestDate = uniqueDates[uniqueDates.length - 1];
+
+                // عرض الأخبار التي تطابق هذا التاريخ الأحدث فقط
+                allRows.filter(item => item.dateStr === latestDate).forEach(item => {
+                    container.innerHTML += `
+                        <div class="card">
+                            <div class="meta"><span>📍 ${item.country}</span><span>📅 ${item.dateStr}</span></div>
+                            <div class="title">${item.title}</div>
+                            <div class="content">${item.text}</div>
+                            <div style="margin-top:15px"><a href="${item.link}" target="_blank">🔗 المصدر: ${item.source}</a></div>
+                        </div>`;
                 });
+            }).catch(err => {
+                document.getElementById('status').innerText = "حدث خطأ أثناء جلب البيانات.";
             });
         }
         init();

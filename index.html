@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>أخبار الدول</title>
+    <style>
+        body { background-color: #121212; color: #e8eaed; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: auto; }
+        .card { background: #1e1e1e; border-radius: 12px; border-top: 5px solid #8ab4f8; padding: 20px; margin-bottom: 20px; border: 1px solid #3c4043; }
+        .title { color: #8ab4f8; font-size: 22px; margin-bottom: 10px; }
+        .meta { font-size: 13px; color: #9aa0a6; margin-bottom: 15px; display: flex; justify-content: space-between; }
+        .content { line-height: 1.7; color: #d1d1d1; }
+        #status { text-align: center; margin-top: 50px; color: #9aa0a6; }
+        a { color: #8ab4f8; text-decoration: none; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="status">جاري جلب البيانات...</div>
+        <div id="news-container"></div>
+    </div>
+
+    <script>
+        const SHEET_ID = '1qfzl_5jC4pNUVVwA18_p0i9aXpCdaUZnCCmQAdyHSLc';
+        
+        function init() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const country = urlParams.get('country');
+
+            if (country) {
+                fetchData(decodeURIComponent(country));
+            } else {
+                document.getElementById('status').innerText = "يرجى تحديد دولة في الرابط، مثال: ?country=العراق";
+            }
+        }
+
+        function fetchData(query) {
+            const gql = encodeURIComponent(`SELECT A, B, C, D, E, F WHERE A = '${query}'`);
+            const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tq=${gql}`;
+
+            fetch(url).then(res => res.text()).then(text => {
+                const json = JSON.parse(text.substring(47, text.length - 2));
+                const rows = json.table.rows;
+                const container = document.getElementById('news-container');
+                document.getElementById('status').style.display = "none";
+
+                if (!rows || rows.length === 0) {
+                    document.getElementById('status').innerText = "لا توجد نتائج لـ " + query;
+                    document.getElementById('status').style.display = "block";
+                    return;
+                }
+
+                // جلب أحدث تاريخ (آخر سطر)
+                const latestDate = rows[rows.length - 1].c[3].f || rows[rows.length - 1].c[3].v;
+
+                rows.forEach(r => {
+                    const date = r.c[3].f || r.c[3].v;
+                    if (date === latestDate) {
+                        container.innerHTML += `
+                            <div class="card">
+                                <div class="meta"><span>📍 ${r.c[0].v}</span><span>📅 ${date}</span></div>
+                                <div class="title">${r.c[1].v}</div>
+                                <div class="content">${r.c[2].v}</div>
+                                <div style="margin-top:15px"><a href="${r.c[5].v}" target="_blank">🔗 المصدر: ${r.c[4].v}</a></div>
+                            </div>`;
+                    }
+                });
+            });
+        }
+        init();
+    </script>
+</body>
+</html>

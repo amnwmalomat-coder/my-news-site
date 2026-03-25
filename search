@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>الأرشيف السريع الشامل</title>
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: auto; }
+        
+        .search-container { position: sticky; top: 0; z-index: 100; background: #0d1117; padding: 10px 0 20px 0; }
+        .search-box { width: 100%; padding: 15px 20px; border-radius: 10px; border: 1px solid #30363d; background: #161b22; color: #c9d1d9; font-size: 18px; box-sizing: border-box; outline: none; }
+
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; margin-bottom: 20px; border-right: 5px solid #58a6ff; }
+        .date-badge { background: #21262d; padding: 4px 10px; border-radius: 15px; color: #f85149; font-size: 12px; font-weight: bold; }
+        .country-badge { background: #58a6ff; color: #fff; padding: 4px 10px; border-radius: 15px; font-size: 12px; font-weight: bold; margin-left: 10px; }
+        
+        .title { color: #58a6ff; font-size: 20px; margin: 15px 0 10px 0; font-weight: bold; }
+        .content { font-size: 15px; line-height: 1.6; color: #d1d7de; }
+        
+        #status { text-align: center; padding: 20px; color: #8b949e; }
+        #load-more { text-align: center; padding: 20px; display: none; cursor: pointer; color: #58a6ff; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="search-container">
+            <input type="text" id="searchInput" class="search-box" placeholder="🔍 ابحث هنا (دولة، مدينة، محتوى)..." onkeyup="handleSearch()">
+        </div>
+        
+        <div id="archive-container"></div>
+        <div id="status">جاري التحميل...</div>
+        <div id="load-more" onclick="renderNextBatch()">👇 عرض المزيد من الأخبار</div>
+    </div>
+
+    <script>
+        const SHEET_ID = '1qfzl_5jC4pNUVVwA18_p0i9aXpCdaUZnCCmQAdyHSLc';
+        const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv`;
+        
+        let allData = []; 
+        let filteredData = [];
+        let currentIndex = 0;
+        const BATCH_SIZE = 20; // عدد الأخبار التي تظهر في كل مرة
+
+        async function fetchData() {
+            try {
+                const response = await fetch(CSV_URL);
+                const csvText = await response.text();
+                
+                const rows = csvText.split('\n').map(row => {
+                    return row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(cell => cell.replace(/"/g, '').trim());
+                });
+
+                allData = rows.slice(1).filter(r => r[0] && r[1]).map(r => ({
+                    country: r[0], title: r[1], content: r[2] || "",
+                    dateText: r[3], sortKey: r[3] ? r[3].split('/').reverse().join('') : '0',
+                    sourceName: r[4] || "المصدر", sourceLink: r[5] || "#"
+                }));
+
+                allData.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+                filteredData = [...allData];
+                
+                document.getElementById('status').style.display = 'none';
+                renderNextBatch(true); // تحميل أول دفعة
+
+            } catch (e) {
+                document.getElementById('status').innerText = "خطأ في الاتصال.";
+            }
+        }
+
+        function renderNextBatch(reset = false) {
+            const container = document.getElementById('archive-container');
+            if (reset) {
+                container.innerHTML = "";
+                currentIndex = 0;
+            }
+
+            const nextBatch = filteredData.slice(currentIndex, currentIndex + BATCH_SIZE);
+            
+            let html = "";
+            nextBatch.forEach(item => {
+                html += `
+                    <div class="card">
+                        <span class="country-badge">🌍 ${item.country}</span>
+                        <span class="date-badge">📅 ${item.dateText}</span>
+                        <div class="title">${item.title}</div>
+                        <div class="content">${item.content}</div>
+                        <br><a href="${item.sourceLink}" target="_blank" style="color:#58a6ff; text-decoration:none; font-size:13px;">🔗 المصدر: ${item.sourceName}</a>
+                    </div>`;
+            });
+
+            container.insertAdjacentHTML('beforeend', html);
+            currentIndex += BATCH_SIZE;
+
+            // إظهار أو إخفاء زر "عرض المزيد"
+            document.getElementById('load-more').style.display = currentIndex < filteredData.length ? 'block' : 'none';
+        }
+
+        function handleSearch() {
+            const term = document.getElementById('searchInput').value.toLowerCase();
+            filteredData = allData.filter(item => 
+                item.country.toLowerCase().includes(term) || 
+                item.title.toLowerCase().includes(term) || 
+                item.content.toLowerCase().includes(term)
+            );
+            renderNextBatch(true);
+        }
+
+        // تحسين: التحميل التلقائي عند الوصول لنهاية الصفحة (Infinite Scroll)
+        window.onscroll = function() {
+            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
+                if (currentIndex < filteredData.length) renderNextBatch();
+            }
+        };
+
+        fetchData();
+    </script>
+</body>
+</html>

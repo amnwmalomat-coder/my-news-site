@@ -7,7 +7,7 @@
     <style>
         body { background-color: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; padding: 20px; }
         .container { max-width: 800px; margin: auto; }
-        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; margin-bottom: 20px; border-top: 4px solid #58a6ff; position: relative; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; margin-bottom: 20px; border-top: 4px solid #58a6ff; }
         .date-group-header { background: #21262d; padding: 10px 20px; border-radius: 8px; margin-bottom: 15px; border-right: 5px solid #f85149; color: #f85149; font-weight: bold; font-size: 18px; }
         .title { color: #58a6ff; font-size: 22px; margin: 0 0 10px 0; font-weight: bold; }
         .meta { display: flex; justify-content: space-between; font-size: 12px; color: #8b949e; margin-bottom: 15px; background: #0d1117; padding: 5px 10px; border-radius: 5px; }
@@ -19,72 +19,69 @@
 </head>
 <body>
     <div class="container">
-        <div id="status">جاري جلب آخر 3 تحديثات...</div>
+        <div id="status">جاري جلب آخر التحديثات...</div>
         <div id="news-container"></div>
     </div>
 
     <script>
+        // الرابط المباشر لتصدير البيانات كـ CSV لضمان جلب كل الصفوف الجديدة فوراً
         const SHEET_ID = '1qfzl_5jC4pNUVVwA18_p0i9aXpCdaUZnCCmQAdyHSLc';
+        const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv`;
 
         async function init() {
             const params = new URLSearchParams(window.location.search);
             const country = params.get('country');
             if (!country) {
-                document.getElementById('status').innerText = "يرجى تحديد الدولة، مثال: ?country=تونس";
+                document.getElementById('status').innerText = "يرجى تحديد الدولة في الرابط.";
                 return;
             }
             loadNews(decodeURIComponent(country));
         }
 
         async function loadNews(target) {
-            // نطلب البيانات الخاصة بالدولة فقط، وسنقوم بالترتيب داخل المتصفح لضمان الدقة
-            const query = encodeURIComponent(`SELECT A, B, C, D, E, F WHERE A = '${target}'`);
-            const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tq=${query}`;
-
             try {
-                const response = await fetch(url);
-                const text = await response.text();
-                const json = JSON.parse(text.substring(47, text.length - 2));
-                const rows = json.table.rows;
+                const response = await fetch(CSV_URL);
+                const data = await response.text();
                 
+                // تحويل نص CSV إلى مصفوفة صفوف
+                const rows = data.split('\n').map(row => {
+                    // تعامل ذكي مع الفواصل داخل النصوص
+                    return row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(cell => cell.replace(/"/g, '').trim());
+                });
+
+                // فلترة البيانات بناءً على الدولة (العمود الأول index 0)
+                let filteredNews = rows.filter(r => r[0] === target).map(r => ({
+                    country: r[0],
+                    title: r[1],
+                    content: r[2],
+                    dateText: r[3],
+                    // إنشاء مفتاح ترتيب (نحول التاريخ لـ YYYYMMDD إذا أمكن)
+                    sortKey: r[3] ? r[3].split('/').reverse().join('') : '0', 
+                    sourceName: r[4],
+                    sourceLink: r[5]
+                }));
+
+                // ترتيب من الأحدث للأقدم
+                filteredNews.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+
                 const container = document.getElementById('news-container');
                 const status = document.getElementById('status');
 
-                if (!rows || rows.length === 0) {
+                if (filteredNews.length === 0) {
                     status.innerText = "لا توجد أخبار مسجلة لـ " + target;
                     return;
                 }
 
-                // 1. تحويل البيانات إلى كائنات مريحة والتعامل مع التواريخ
-                let allNews = rows.map(r => {
-                    // تحويل قيمة التاريخ من تنسيق Google Sheets إلى كائن Date صالح للمقارنة
-                    const rawDate = r.c[3]?.f || r.c[3]?.v;
-                    return {
-                        country: r.c[0]?.v,
-                        title: r.c[1]?.v,
-                        content: r.c[2]?.v,
-                        dateText: rawDate,
-                        // محاولة استخراج رقم التاريخ للمقارنة (يعالج تنسيقات مثل Date(2026,2,25))
-                        dateValue: new Date(rawDate).getTime() || 0, 
-                        sourceName: r.c[4]?.v,
-                        sourceLink: r.c[5]?.v
-                    };
-                });
-
-                // 2. ترتيب الأخبار: الأحدث أولاً (تنازلياً)
-                allNews.sort((a, b) => b.dateValue - a.dateValue);
-
-                // 3. استخراج آخر 3 تواريخ فريدة تم العثور عليها
-                const uniqueDates = [...new Set(allNews.map(n => n.dateText))].slice(0, 3);
-
                 status.style.display = "none";
                 container.innerHTML = "";
 
-                // 4. عرض الأخبار مصنفة حسب تلك التواريخ
+                // جلب آخر 3 تواريخ فريدة
+                const uniqueDates = [...new Set(filteredNews.map(n => n.dateText))].slice(0, 3);
+
                 uniqueDates.forEach(date => {
                     container.innerHTML += `<div class="date-group-header">تحديثات تاريخ: ${date}</div>`;
                     
-                    allNews.filter(n => n.dateText === date).forEach(item => {
+                    filteredNews.filter(n => n.dateText === date).forEach(item => {
                         container.innerHTML += `
                             <div class="card">
                                 <div class="meta">
@@ -100,7 +97,7 @@
 
             } catch (e) {
                 console.error(e);
-                document.getElementById('status').innerText = "خطأ في الاتصال أو في معالجة البيانات.";
+                document.getElementById('status').innerText = "خطأ في الاتصال بالبيانات.";
             }
         }
         init();

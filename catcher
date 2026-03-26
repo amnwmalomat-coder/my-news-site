@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+
+    <title>خريطة تتبع الحركة - الحل النهائي</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, sans-serif; }
+        #map { height: 100vh; width: 100%; }
+        #filter-status {
+            position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+            z-index: 1000; background: rgba(44, 62, 80, 0.95); color: #fff;
+            padding: 8px 20px; border-radius: 30px; font-size: 14px; 
+            font-weight: bold; display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        #map-icon-btn {
+            position: absolute; top: 15px; right: 15px;
+            z-index: 1000; background: white; width: 42px; height: 42px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            border: 1px solid #ccc;
+        }
+        .leaflet-marker-icon { background: none; border: none; }
+    </style>
+</head>
+<body>
+
+<div id="filter-status">حركة: جاري التحميل...</div>
+<div id="map-icon-btn" onclick="toggleMap()">🛰️</div>
+<div id="map"></div>
+
+<script>
+    // العودة للرابط الأصلي الذي يعمل لديك بالتأكيد
+    const BASE_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSxAO_sUg_UB3Ye_UHP8loA9y-AEeKmgv6rSuVwsRUnm4XYrnbmwpupqXQXrJXAHn_WsgjZLAnNg9VE/pub?gid=0&single=true&output=csv';
+
+    const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['mt0', 'mt1', 'mt2', 'mt3'] });
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+
+    let isSatellite = true;
+    const map = L.map('map', { center: [27.0, 17.0], zoom: 6, layers: [googleHybrid] });
+    let markersLayer = L.layerGroup().addTo(map);
+
+    function toggleMap() {
+        const btn = document.getElementById('map-icon-btn');
+        if (isSatellite) {
+            map.removeLayer(googleHybrid); map.addLayer(osm);
+            btn.innerHTML = '🗺️'; isSatellite = false;
+        } else {
+            map.removeLayer(osm); map.addLayer(googleHybrid);
+            btn.innerHTML = '🛰️'; isSatellite = true;
+        }
+    }
+
+    function createColoredPin(color) {
+        const svg = `<svg viewBox="0 0 32 32" width="32" height="32"><path d="M16 0C10.5 0 6 4.5 6 10c0 5.5 10 22 10 22s10-16.5 10-22C26 4.5 21.5 0 16 0z" fill="${color}" stroke="#fff" stroke-width="1"/><circle cx="16" cy="10" r="3" fill="#fff"/></svg>`;
+        return L.divIcon({ className: '', html: svg, iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -32] });
+    }
+
+    async function loadMarkers() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const filterSite = urlParams.get('site');
+        const filterRoute = urlParams.get('route');
+        const statusBox = document.getElementById('filter-status');
+        
+        // تفريغ الخريطة قبل التحميل لضمان حذف النقاط القديمة
+        markersLayer.clearLayers();
+        
+        // إضافة بصمة زمنية فريدة جداً للرابط لتجاوز كاش جوجل
+        const finalUrl = `${BASE_CSV_URL}&cachebuster=${Date.now()}`;
+
+        try {
+            // استخدام fetch مع إعدادات منع التخزين المؤقت
+            const response = await fetch(finalUrl, { cache: "no-store" });
+            const data = await response.text();
+
+            Papa.parse(data, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    let bounds = [], nameFound = false;
+                    results.data.forEach(row => {
+                        // شرط أساسي: النقطة يجب أن تحتوي على إحداثيات (هذا يمنع ظهور الصفوف المحذوفة)
+                        if (row.cord && row.cord.trim() !== "") {
+                            let isMatch = true;
+                            if (filterSite && row.site !== filterSite) isMatch = false;
+                            if (filterRoute && row.route !== filterRoute) isMatch = false;
+
+                            if (isMatch && row.cord.includes(',')) {
+                                const coords = row.cord.split(',').map(Number);
+                                const pinColor = row.color || '#3498db';
+                                
+                                bounds.push(coords);
+                                if (!nameFound && (filterSite || filterRoute)) {
+                                    statusBox.innerHTML = `حركة: ${row.name || '...'}`;
+                                    statusBox.style.display = 'block';
+                                    nameFound = true;
+                                }
+
+                                L.marker(coords, { icon: createColoredPin(pinColor) })
+                                    .bindPopup(`<b>${row.name}</b><br>${row.site}<br>${row.date} ${row.time}`)
+                                    .addTo(markersLayer);
+                            }
+                        }
+                    });
+                    if (bounds.length > 0) map.fitBounds(bounds, { padding: [50, 50] });
+                }
+            });
+        } catch (e) {
+            console.error("خطأ في التحميل:", e);
+        }
+    }
+
+    window.onload = loadMarkers;
+</script>
+
+</body>
+</html>

@@ -7,26 +7,26 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-	<!-- Open Graph tags for WhatsApp Preview -->
-<meta property="og:type" content="website">
-<meta property="og:title" content="منظومة تتبع الاهداف">
-<meta property="og:description" content="إدارة الأمن والمعلومات">
-
-<!-- رابط الصورة المباشر من جوجل درايف -->
-<meta property="og:image" content="https://lh3.googleusercontent.com/d/19-uWil9EMF7DHqFSP8qOSMLJyH7Pt8Bn">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:image:type" content="image/png">
     
-    <title>خريطة تتبع الحركة </title>
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="منظومة تتبع الاهداف">
+    <meta property="og:description" content="إدارة الأمن والمعلومات">
+
+    <meta property="og:image" content="https://lh3.googleusercontent.com/d/19-uWil9EMF7DHqFSP8qOSMLJyH7Pt8Bn">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:type" content="image/png">
+    
+    <title>خريطة تتبع الحركة</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, sans-serif; }
-        #map { height: 100vh; width: 100%; }
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #f5f7fa; }
+        #map { height: 100vh; width: 100%; display: none; } /* مخفي افتراضياً لحين تسجيل الدخول */
+        
         #filter-status {
             position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
             z-index: 1000; background: rgba(44, 62, 80, 0.95); color: #fff;
@@ -36,23 +36,135 @@
         #map-icon-btn {
             position: absolute; top: 15px; right: 15px;
             z-index: 1000; background: white; width: 42px; height: 42px; border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
+            display: none; align-items: center; justify-content: center; /* مخفي افتراضياً */
             font-size: 20px; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             border: 1px solid #ccc;
         }
         .leaflet-marker-icon { background: none; border: none; }
+
+        /* واجهة تسجيل الدخول المتطورة */
+        #login-container {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(135deg, #4a148c 0%, #0d47a1 100%);
+            display: flex; align-items: center; justify-content: center; z-index: 9999;
+        }
+        .login-card {
+            background: white; padding: 35px 30px; border-radius: 15px; width: 90%; max-width: 400px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.3); text-align: center; box-sizing: border-box;
+        }
+        .login-card h2 { color: #2c3e50; margin-bottom: 25px; font-size: 24px; font-weight: bold; }
+        .login-form input {
+            width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ccc;
+            border-radius: 8px; box-sizing: border-box; outline: none; font-size: 15px; text-align: center;
+            transition: 0.3s;
+        }
+        .login-form input:focus { border-color: #0d47a1; box-shadow: 0 0 5px rgba(13, 71, 161, 0.3); }
+        .login-btn {
+            width: 100%; background: #0d47a1; color: white; border: none; padding: 12px;
+            border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; margin-top: 15px;
+            transition: 0.3s;
+        }
+        .login-btn:hover { background: #0a377d; }
+        .login-btn:disabled { background: #bbb; cursor: not-allowed; }
+        .login-error { color: #e74c3c; font-size: 14px; margin-top: 12px; display: none; font-weight: bold; }
     </style>
 </head>
 <body>
+
+<div id="login-container">
+    <div class="login-card">
+        <h2>تسجيل الدخول للمنظومة</h2>
+        <div class="login-form">
+            <input type="text" id="username" placeholder="اسم المستخدم">
+            <input type="password" id="password" placeholder="كلمة المرور">
+            <button class="login-btn" id="sub-btn" onclick="handleLogin()">دخول</button>
+            <div class="login-error" id="login-err-msg">اسم المستخدم أو كلمة المرور غير صحيحة!</div>
+        </div>
+    </div>
+</div>
 
 <div id="filter-status">حركة: جاري التحميل...</div>
 <div id="map-icon-btn" onclick="toggleMap()">🛰️</div>
 <div id="map"></div>
 
 <script>
-    // العودة للرابط الأصلي الذي يعمل لديك بالتأكيد
     const BASE_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSxAO_sUg_UB3Ye_UHP8loA9y-AEeKmgv6rSuVwsRUnm4XYrnbmwpupqXQXrJXAHn_WsgjZLAnNg9VE/pub?gid=0&single=true&output=csv';
+    
+    // رابط جلب بيانات المستخدمين المفتوح لتخطي الـ CORS
+    const USERS_JSON_URL = 'https://docs.google.com/spreadsheets/d/1B8pOyvHVJ0ZAIm6Pm7fSqzXLhkdsOSrTW40uNn7QeDs/gviz/tq?tqx=out:json';
 
+    window.onload = function() {
+        if (sessionStorage.getItem('isLoggedIn') === 'true') {
+            showMapInterface();
+        }
+    }
+
+    // مطابقة مستخدمين النظام عبر جلب مباشر وسريع يتخطى جدار حماية المتصفح
+    async function handleLogin() {
+        const userInp = document.getElementById('username').value.trim().toLowerCase();
+        const passInp = document.getElementById('password').value.trim();
+        const errMsg = document.getElementById('login-err-msg');
+        const btn = document.getElementById('sub-btn');
+
+        if (!userInp || !passInp) {
+            errMsg.innerText = "الرجاء إدخال الحقول المطلوبة";
+            errMsg.style.display = "block";
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerText = "جاري التحقق والمطابقة...";
+        errMsg.style.display = "none";
+
+        try {
+            const res = await fetch(USERS_JSON_URL);
+            const text = await res.text();
+            
+            // تنظيف نص الـ JSON المسترجع من قوقل شيت لتسهيل قراءته
+            const jsonString = text.substring(text.indexOf("{"), text.lastIndexOf("}") + 1);
+            const json = JSON.parse(jsonString);
+            const rows = json.table.rows;
+
+            let loginSuccess = false;
+
+            // الفحص بناء على ترتيب الأعمدة (العمود الأول للمستخدم، العمود الثاني لكمة المرور)
+            for (let i = 0; i < rows.length; i++) {
+                const cellUser = rows[i].c[0] ? rows[i].c[0].v : '';
+                const cellPass = rows[i].c[1] ? rows[i].c[1].v : '';
+
+                if (cellUser && cellPass && cellUser.toString().trim().toLowerCase() === userInp && cellPass.toString().trim() === passInp) {
+                    loginSuccess = true;
+                    break;
+                }
+            }
+
+            if (loginSuccess) {
+                sessionStorage.setItem('isLoggedIn', 'true');
+                showMapInterface();
+            } else {
+                btn.disabled = false;
+                btn.innerText = "دخول";
+                errMsg.innerText = "اسم المستخدم أو كلمة المرور غير صحيحة!";
+                errMsg.style.display = "block";
+            }
+
+        } catch (e) {
+            btn.disabled = false;
+            btn.innerText = "دخول";
+            errMsg.innerText = "تعذر الاتصال بقاعدة البيانات، يرجى التحقق من صلاحيات الرابط.";
+            errMsg.style.display = "block";
+        }
+    }
+
+    function showMapInterface() {
+        document.getElementById('login-container').style.display = 'none';
+        document.getElementById('map').style.display = 'block';
+        document.getElementById('map-icon-btn').style.display = 'flex';
+        map.invalidateSize();
+        loadMarkers();
+    }
+
+    // إعدادات الخريطة
     const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['mt0', 'mt1', 'mt2', 'mt3'] });
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
 
@@ -82,14 +194,11 @@
         const filterRoute = urlParams.get('route');
         const statusBox = document.getElementById('filter-status');
         
-        // تفريغ الخريطة قبل التحميل لضمان حذف النقاط القديمة
         markersLayer.clearLayers();
         
-        // إضافة بصمة زمنية فريدة جداً للرابط لتجاوز كاش جوجل
         const finalUrl = `${BASE_CSV_URL}&cachebuster=${Date.now()}`;
 
         try {
-            // استخدام fetch مع إعدادات منع التخزين المؤقت
             const response = await fetch(finalUrl, { cache: "no-store" });
             const data = await response.text();
 
@@ -99,7 +208,6 @@
                 complete: function(results) {
                     let bounds = [], nameFound = false;
                     results.data.forEach(row => {
-                        // شرط أساسي: النقطة يجب أن تحتوي على إحداثيات (هذا يمنع ظهور الصفوف المحذوفة)
                         if (row.cord && row.cord.trim() !== "") {
                             let isMatch = true;
                             if (filterSite && row.site !== filterSite) isMatch = false;
@@ -129,8 +237,6 @@
             console.error("خطأ في التحميل:", e);
         }
     }
-
-    window.onload = loadMarkers;
 </script>
 
 </body>
